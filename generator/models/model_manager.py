@@ -1,4 +1,5 @@
 import torch
+import asyncio
 from diffusers import StableDiffusionPipeline
 from typing import Dict
 from io import BytesIO
@@ -24,19 +25,38 @@ class ModelManager:
             pipe.safety_checker = None
             self.models[name] = pipe
 
-    def generate_image(self, prompt: str, model_name: str,
-                       steps: int = 20, cfg: float = 7.0, seed: int | None = None) -> Image.Image:
+    def generate_image(self, prompt: str, model_name: str, negative_prompt: str,
+                       steps: int = 20, cfg: float = 7.0, seed: int | None = None) -> str:
         if model_name not in self.models:
             raise ValueError(f"Модель {model_name} не загружена")
         generator = torch.Generator(device=self.device).manual_seed(seed) if seed else None
-        return self.models[model_name](prompt,
-                                       num_inference_steps=steps,
-                                       guidance_scale=cfg,
-                                       generator=generator).images[0]
+        image = self.models[model_name](
+                                        prompt,
+                                        negative_prompt=negative_prompt,
+                                        num_inference_steps=steps,
+                                        guidance_scale=cfg,
+                                        generator=generator
+                                    ).images[0]
+        
+        img_str = self.conver_img_to_base64(image)
 
-    def generate_base64(self, prompt: str, model_name: str, **kw) -> str:
-        img = self.generate_image(prompt, model_name, **kw)
-        buf = BytesIO(); img.save(buf, format="PNG")
+        return img_str
+    
+    async def async_generate_image(self, prompt: str, model_name: str, negative_prompt: str,
+                                   steps: int = 20, cfg: float = 7.0, seed: int | None = None) -> str:
+        return await asyncio.to_thread(
+            self.generate_image,
+            prompt,
+            model_name,
+            negative_prompt,
+            steps,
+            cfg,
+            seed
+        )
+
+    def conver_img_to_base64(self, img: Image.Image) -> str:
+        buf = BytesIO()
+        img.save(buf, format="PNG")
         return base64.b64encode(buf.getvalue()).decode()
 
 def get_model_manager():

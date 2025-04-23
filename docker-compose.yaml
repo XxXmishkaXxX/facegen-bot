@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  
+  zookeeper:
+    image: wurstmeister/zookeeper
+    ports:
+      - "2181:2181"
+    networks: [facegen]
+
+  kafka:
+    image: wurstmeister/kafka
+    env_file:
+      - .env
+    ports:
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    networks: [facegen]
+
+  generator:
+    image: facegen_cpu
+    build:
+      context: ./generator
+    depends_on: [kafka]
+    env_file:
+      - ./generator/.env
+    volumes:
+      - ./generator:/app
+      - ./data:/data
+    networks: [facegen]
+
+  bot:
+    image: facegen_bot
+    build:
+      context: ./bot
+    depends_on: [kafka]
+    env_file:
+      - ./bot/.env
+    volumes:
+      - ./bot:/app
+    networks: [facegen]
+    restart: unless-stopped
+
+networks:
+  facegen:

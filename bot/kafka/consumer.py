@@ -29,18 +29,12 @@ class Consumer:
         try:
             async for msg in self.consumer:
                 try:
-                    data = json.loads(msg.value.decode("utf-8"))
-                    user_id = data.get("user_id")
-                    prompt = data.get("prompt")
-                    model_name = data.get("model_name", "stable_diffusion")
-                    negative_prompt= data.get("negative_prompt")
+                    logger.info("GOT NEW IMAGE")
+                    payload = json.loads(msg.value.decode())
+                    user_id = payload["user_id"]
+                    img_b64 = payload["image_base64"]
 
-                    
-                    logger.info(f"GOT NEW MESSAGE: user:{user_id}, model={model_name}, prompt={prompt}")
-
-
-                    await callback(user_id=user_id, prompt=prompt, model_name=model_name, negative_prompt=negative_prompt)
-
+                    await callback(user_id=user_id, img_b64=img_b64)
 
                 except (json.JSONDecodeError, KeyError) as e:
                     logger.error(f"[KafkaConsumer] Error decoding message: {e}")
@@ -48,6 +42,6 @@ class Consumer:
             await self.stop()
 
 
-consumer = Consumer(topic=settings.TOPIC_REQUEST,
+consumer = Consumer(topic=settings.TOPIC_RESPONSE,
                     bootstrap_server=settings.BOOTSTRAP_SERVERS,
                     group_id=settings.GROUP_ID)
