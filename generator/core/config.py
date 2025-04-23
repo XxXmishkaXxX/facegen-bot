@@ -1,0 +1,15 @@
+import os
+from pydantic_settings import BaseSettingss
+
+class Settings(BaseSettings):
+
+    BOOTSTRAP_SERVERS: str
+    TOPIC_REQUEST: str
+    TOPIC_RESPONSE: str
+    GROUP_ID: str
+
+    class Config:
+        env_file = os.path.join(os.path.dirname(__file__), '..', '..', '.env')
+
+
+settings = Settings()
