@@ -24,6 +24,7 @@ STYLE_MAP = {
 MODEL_MAP = {
     "Stable Diffusion 1.5": "sd15",
     "Realistic Vision 4.0": "realistic_v40",
+    
 }
 
 router = Router()

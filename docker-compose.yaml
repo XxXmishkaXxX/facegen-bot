@@ -29,7 +29,8 @@ services:
       - ./generator:/app
       - ./data:/data
     networks: [facegen]
-
+    runtime: nvidia
+  
   bot:
     image: facegen_bot
     build:
