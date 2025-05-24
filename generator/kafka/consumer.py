@@ -31,15 +31,13 @@ class Consumer:
                 try:
                     data = json.loads(msg.value.decode("utf-8"))
                     user_id = data.get("user_id")
+                    event = data.get("event")
                     prompt = data.get("prompt")
-                    model_name = data.get("model_name", "stable_diffusion")
-                    negative_prompt= data.get("negative_prompt")
+                    negative_prompt = data.get("negative_prompt")
+                    source_photo = data.get("source_photo")
+                    target_photo = data.get("target_photo")
 
-                    
-                    logger.info(f"GOT NEW MESSAGE: user:{user_id}, model={model_name}, prompt={prompt}")
-
-
-                    await callback(user_id=user_id, prompt=prompt, model_name=model_name, negative_prompt=negative_prompt)
+                    await callback(user_id=user_id, event=event, target_photo=target_photo, source_photo=source_photo, prompt=prompt, negative_prompt=negative_prompt)
 
 
                 except (json.JSONDecodeError, KeyError) as e:
