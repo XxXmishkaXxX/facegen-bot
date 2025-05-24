@@ -10,7 +10,7 @@ class Producer:
         self.producer: AIOKafkaProducer | None = None
 
     async def start(self):
-        self.producer = AIOKafkaProducer(bootstrap_servers=self.server)
+        self.producer = AIOKafkaProducer(bootstrap_servers=self.server, max_request_size=10_000_000)
         await self.producer.start()
 
 
