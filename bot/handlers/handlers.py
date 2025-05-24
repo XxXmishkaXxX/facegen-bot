@@ -1,9 +1,14 @@
+import base64
+
+
 from aiogram import Router, types
 from aiogram.enums import ParseMode
-from aiogram.filters import Command, StateFilter
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
+from aiogram.filters import Command, StateFilter
+from aiogram import F
+
 
 
 from kafka.producer import producer
@@ -13,18 +18,14 @@ class Form(StatesGroup):
     ModelSelection = State()
     StyleSelection = State()
     PromptInput = State()
+    FaceswapSource = State()
+    FaceswapTarget = State() 
 
 STYLE_MAP = {
     "🎯 Реализм": "realistic",
     "🎨 Арт": "artistic",
     "🌸 Аниме": "anime",
     "🌆 Киберпанк": "cyberpunk",
-}
-
-MODEL_MAP = {
-    "Stable Diffusion 1.5": "sd15",
-    "Realistic Vision 4.0": "realistic_v40",
-    
 }
 
 router = Router()
@@ -39,48 +40,75 @@ async def start_command(message: types.Message, state: FSMContext):
         "Я помогу тебе создать изображения с помощью ИИ.\n\n"
         "Вот какие модели я поддерживаю:\n"
         "- **Stable Diffusion 1.5**: генерация изображений в классическом стиле.\n"
-        "- **Realistic Vision 4.0**: для более реалистичных изображений.\n\n"
+        "- **FaceFusion 3.0: замена лиц на изображении\n\n"
         "Для того, чтобы начать генерацию изображений, введи команду /generate \n"
     )
 
-@router.message(Command("generate"))
-async def generate_command(message: types.Message, state: FSMContext):
-    # Обработка команды /generate
-    await message.answer(
-        "Выберите модель для генерации изображения:",
-        reply_markup=ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text=name)] for name in MODEL_MAP.keys()
-            ],
-            resize_keyboard=True
-        ),
-        parse_mode=ParseMode.HTML
-    )
-    await state.set_state(Form.ModelSelection)
+@router.message(Command("faceswap"))
+async def faceswap_command(message: types.Message, state: FSMContext):
+    await state.clear()
+    await message.answer("Пожалуйста, отправьте фото с лицом, которое нужно заменить (источник).")
+    await state.set_state(Form.FaceswapSource)
 
-@router.message(StateFilter(Form.ModelSelection))
-async def choose_model(message: types.Message, state: FSMContext):
-    btn_text = message.text.strip()
+@router.message(StateFilter(Form.FaceswapSource), F.content_type == "photo")
+async def faceswap_receive_source(message: types.Message, state: FSMContext):
+    photo = message.photo[-1]  # берём фото с максимальным разрешением
+    file_id = photo.file_id
 
-    if btn_text not in MODEL_MAP:
-        await message.answer("Пожалуйста, выбери одну из предложенных моделей.")
+    await state.update_data(faceswap_source_file_id=file_id)
+    await message.answer("Отлично! Теперь отправьте фото, на котором нужно заменить лицо (цель).")
+    await state.set_state(Form.FaceswapTarget)
+
+
+@router.message(StateFilter(Form.FaceswapTarget), F.content_type == "photo")
+async def faceswap_receive_target(message: types.Message, state: FSMContext):
+    photo = message.photo[-1]
+    target_file_id = photo.file_id
+
+    data = await state.get_data()
+    source_file_id = data.get("faceswap_source_file_id")
+
+    if not source_file_id:
+        await message.answer("Что-то пошло не так, попробуйте снова.")
+        await state.clear()
         return
 
-    internal_id = MODEL_MAP[btn_text]
-    await state.update_data(selected_model_id=internal_id,
-                            selected_model_human=btn_text)
+    await state.clear()
 
-    style_kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text=name)] for name in STYLE_MAP.keys()
-        ],
-        resize_keyboard=True
+    bot = message.bot
+
+    source_file = await bot.get_file(source_file_id)
+    target_file = await bot.get_file(target_file_id)
+
+    source_bytesio = await bot.download_file(source_file.file_path)
+    target_bytesio = await bot.download_file(target_file.file_path)
+
+    source_bytes = source_bytesio.read()
+    target_bytes = target_bytesio.read()
+
+    source_base64 = base64.b64encode(source_bytes).decode('utf-8')
+    target_base64 = base64.b64encode(target_bytes).decode('utf-8')
+
+    await producer.send_faceswap_request(
+        user_id=message.chat.id,
+        source_base64=source_base64,
+        target_base64=target_base64,
     )
 
+    await message.answer("Запрос на замену лица отправлен. Ожидайте результат.")
+
+
+
+@router.message(Command("generate"))
+async def generate_command(message: types.Message, state: FSMContext):
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text)] for text in STYLE_MAP.keys()],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
     await message.answer(
-        f"Вы выбрали модель <b>{btn_text}</b>.\nТеперь выберите стиль изображения:",
-        parse_mode=ParseMode.HTML,
-        reply_markup=style_kb
+        "Выберите стиль для генерации изображения:",
+        reply_markup=keyboard,
     )
     await state.set_state(Form.StyleSelection)
 
@@ -109,8 +137,6 @@ async def get_prompt(message: types.Message, state: FSMContext):
     prompt = message.text.strip()
     data = await state.get_data()
 
-    model_id   = data["selected_model_id"]
-    model_name = data["selected_model_human"]
     style_id   = data["selected_style_id"]
     style_name = data["selected_style_human"]
 
@@ -120,7 +146,6 @@ async def get_prompt(message: types.Message, state: FSMContext):
 
     await message.answer(
         f"Запрос принят!\n"
-        f"Модель: <b>{model_name}</b>\n"
         f"Стиль: <b>{style_name}</b>\n"
         f"Промт: <i>{enhanced['prompt']}</i>",
         parse_mode=ParseMode.HTML,
@@ -129,6 +154,5 @@ async def get_prompt(message: types.Message, state: FSMContext):
     await producer.send_request(
         user_id=message.chat.id,
         prompt=enhanced["prompt"],
-        model=model_id,
         negative_prompt=enhanced["negative_prompt"]
     )
